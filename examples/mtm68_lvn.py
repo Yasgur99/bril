@@ -111,7 +111,9 @@ def lvn_block(block):
                 instr['dest'] = id_to_canonical[iD]
         else:
             iD = fresh_id()
+
             if 'dest' in instr and dests_overwritten[instr['dest']]:
+                env[instr['dest']] = iD
                 dest = fresh_dest(instr['dest'], dests_overwritten)
                 instr['dest'] = dest
             elif 'dest' in instr:
