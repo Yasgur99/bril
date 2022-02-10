@@ -72,6 +72,24 @@ def fresh_dest(old_dest, dests_overwritten):
     dests_overwritten[old_dest] = False
     return old_dest
 
+COMMUTATIVE_OPS = ['add', 'mul', 'eq', 'and']
+def in_tbl(value, vals):
+    """
+    Checks whether the value is in the table of values,
+    also exploiting commutivity on ops that are commutative.
+    """
+    # Base case don't even bother checking for commutativity
+    if value in vals:
+        return True
+
+    # Now check commutativity
+    op = value[0]
+    if op  in [COMMUTATIVE_OPS]:
+        a1 = value[1]
+        a2 = value[2]
+        return (op, a2, a1) in vals
+
+
 def lvn_block(block):
     """
     Performs LVN on a given block
@@ -85,7 +103,7 @@ def lvn_block(block):
 
     for instr in block:
         value = get_value(instr)
-        if value in val_to_id.keys():
+        if in_tbl(value, val_to_id.keys()):
             iD = val_to_id[value]
             var = id_to_canonical[iD]
             if 'dest' in instr:
