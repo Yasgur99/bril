@@ -13,6 +13,7 @@ def fresh_id():
     ID_COUNTER += 1
     return ID_COUNTER
 
+COMMUTATIVE_OPS = ['add', 'mul', 'eq', 'and']
 def get_value(instr):
     """
     Creates a value based on the op of the instruction and
@@ -21,29 +22,13 @@ def get_value(instr):
     value = []
     value.append(instr['op'])
     if 'args' in instr:
-        value.extend(instr['args'])
+        if instr['op'] in COMMUTATIVE_OPS:
+            value.extend(sorted(instr['args']))
+        else:
+            value.extend(instr['args'])
     elif 'value' in instr:
         value.append(instr['value'])
     return tuple(value)
-
-def replace_arg(arg, id_to_canonical, env):
-    """
-    Replaces arg with the canonical argument that holds the
-    value that arg should contain
-    """
-    iD = env[arg]
-    return id_to_canonical[iD]
-
-def replace_args(args, id_to_canonical, env):
-    """
-    Replaces args with the canonical argument that holds the
-    value each arg should contain
-    """
-    new_args = []
-    for arg in args:
-        new_arg = replace_arg(arg, id_to_canonical, env)
-        new_args.append(new_arg)
-    return new_args
 
 def get_overwrittens(block):
     """
@@ -56,9 +41,9 @@ def get_overwrittens(block):
         if 'dest' in instr:
             dest = instr['dest']
             if dest in dests_overwrittens:
-                dests_overwrittens[dest] = True
+                dests_overwrittens[dest] = dests_overwrittens[dest] + 1
             else:
-                dests_overwrittens[dest] = False
+                dests_overwrittens[dest] = 0
     return dests_overwrittens
 
 def fresh_dest(old_dest, dests_overwritten):
@@ -67,28 +52,30 @@ def fresh_dest(old_dest, dests_overwritten):
     the program. Also adds the new dest to the dest_overwritten keys
     with a value of False, since this new dest is not used elsewhere.
     """
-    while old_dest in dests_overwritten.keys():
-        old_dest += "'"
-    dests_overwritten[old_dest] = False
-    return old_dest
+    # Generate fresh dest
+    new_dest = old_dest
+    while new_dest in dests_overwritten.keys():
+        new_dest += "x"
 
-COMMUTATIVE_OPS = ['add', 'mul', 'eq', 'and']
-def in_tbl(value, vals):
-    """
-    Checks whether the value is in the table of values,
-    also exploiting commutivity on ops that are commutative.
-    """
-    # Base case don't even bother checking for commutativity
-    if value in vals:
-        return True
+    # Update map accordingly 
+    dests_overwritten[old_dest] = dests_overwritten[old_dest] - 1
+    dests_overwritten[new_dest] = 0
 
-    # Now check commutativity
-    op = value[0]
-    if op  in [COMMUTATIVE_OPS]:
-        a1 = value[1]
-        a2 = value[2]
-        return (op, a2, a1) in vals
+    return new_dest 
 
+def handle_args(block, id_to_canonical, env):
+    read = set()
+    written = set()
+
+    for instr in block:
+        read.update(set(instr.get('args', [])) - written)
+        if 'dest' in instr:
+            written.add(instr['dest'])
+
+    for v in read:
+        iD = fresh_id()
+        id_to_canonical[iD] = v
+        env[v] = iD
 
 def lvn_block(block):
     """
@@ -98,36 +85,46 @@ def lvn_block(block):
     id_to_canonical = {}
     val_to_id = {}
     env = {}
-    # Keys = all dests; Value = whether that dest gets overwritten later
     dests_overwritten = get_overwrittens(block)
 
+    # Some variables are passed to function. These won't have
+    # vals but need to be added to table for canonical reasons
+    handle_args(block, id_to_canonical, env)
+
     for instr in block:
+        # We only care about real instructions
+        if 'label' in instr:
+            continue 
+
         value = get_value(instr)
-        if in_tbl(value, val_to_id.keys()):
+
+        # Don't recompute the value, set dest to canonical instead
+        if value in val_to_id.keys():
             iD = val_to_id[value]
             var = id_to_canonical[iD]
             if 'dest' in instr:
-                env[instr['dest']] = iD
-                instr['dest'] = id_to_canonical[iD]
+                instr.update({'op' : 'id', 'args' : id_to_canonical[iD]})
+
+        # Put value into table
         else:
             iD = fresh_id()
 
-            if 'dest' in instr and dests_overwritten[instr['dest']]:
-                env[instr['dest']] = iD
+            if 'dest' in instr and dests_overwritten[instr['dest']] > 0:
                 dest = fresh_dest(instr['dest'], dests_overwritten)
+                env[instr['dest']] = iD
                 instr['dest'] = dest
             elif 'dest' in instr:
                 dest = instr['dest']
 
-            id_to_val[iD] = value
-            id_to_canonical[iD] = dest
-            val_to_id[value] = iD
+            if 'dest' in instr:
+                id_to_val[iD] = value
+                id_to_canonical[iD] = dest
+                val_to_id[value] = iD
 
+            # Use values from table instead of original values
             if 'args' in instr:
-                new_args = replace_args(instr['args'],   \
-                                        id_to_canonical, \
-                                        env)
-                instr['args'] = new_args
+                instr['args'] = [id_to_canonical[env[arg]] \
+                        for arg in instr['args']]
 
         if 'dest' in instr:
             env[instr['dest']] = iD
