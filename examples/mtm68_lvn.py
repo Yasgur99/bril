@@ -46,6 +46,7 @@ def get_overwrittens(block):
                 dests_overwrittens[dest] = 0
     return dests_overwrittens
 
+DEST_COUNTER = 0
 def fresh_dest(old_dest, dests_overwritten):
     """
     Creates a new destination that is not used anywhere else in
@@ -53,9 +54,13 @@ def fresh_dest(old_dest, dests_overwritten):
     with a value of False, since this new dest is not used elsewhere.
     """
     # Generate fresh dest
-    new_dest = old_dest
+    global DEST_COUNTER
+    new_dest = "lvn.{}".format(DEST_COUNTER)
+    DEST_COUNTER += 1
+
     while new_dest in dests_overwritten.keys():
-        new_dest += "x"
+        new_dest += "lvn.{}".format(DEST_COUNTER)
+        DEST_COUNTER += 1
 
     # Update map accordingly 
     dests_overwritten[old_dest] = dests_overwritten[old_dest] - 1
