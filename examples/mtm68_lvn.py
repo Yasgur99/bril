@@ -103,7 +103,7 @@ def lvn_block(block):
             iD = val_to_id[value]
             var = id_to_canonical[iD]
             if 'dest' in instr:
-                instr.update({'op' : 'id', 'args' : id_to_canonical[iD]})
+                instr.update({'op' : 'id', 'args' : [id_to_canonical[iD]]})
 
         # Put value into table
         else:
