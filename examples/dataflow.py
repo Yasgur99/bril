@@ -103,12 +103,24 @@ def difference(a, b):
     return DfSet(a.items.difference(b.items))
 
 def init_in(a, blocks):
-    b_len = len(blocks)
     isTop = a.init_val == InitVal.EMPTY
-    return [DfSet(isTop) for i in range(b_len)]
+    in_ = {}
+    if a.direction is Direction.FORWARD and blocks:
+        in_[blocks[0]] = DfSet(isTop)
+    else:
+        for block in blocks:
+            in_[block] = DfSet(isTop)
+    return in_
 
 def init_out(a, blocks):
-    b_len = len(blocks)
+    isTop = a.init_val == InitVal.EMPTY
+    out = {}
+    if a.direction is Direction.FORWARD:
+        for block in blocks:
+            out[block] = DfSet(isTop)
+    elif blocks:
+        out[blocks[0]] = DfSet(isTop)
+    return out
 
 def worklist(a, cfg):
     in_ = init_in(a, cfg.blocks)
