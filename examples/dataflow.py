@@ -2,6 +2,7 @@ from enum import Enum, auto
 class Cfg:
 
     def Cfg(self, blocks):
+        self.blocks = blocks
         self.succ = {}
         self.pred = {}
 
@@ -106,31 +107,43 @@ def init_in(a, blocks):
     isTop = a.init_val == InitVal.EMPTY
     return [DfSet(isTop) for i in range(b_len)]
 
+def init_out(a, blocks):
+    b_len = len(blocks)
 
-def worklist(a, blocks):
-    in_ = init_in(a, blocks)
-    out = init_out(a, blocks)
+def worklist(a, cfg):
+    in_ = init_in(a, cfg.blocks)
+    out = init_out(a, cfg.blocks)
 
-    worklist = blocks[:]
+    worklist = cfg.blocks[:]
     while worklist:
         block = worklist.pop()
 
-        in_[block] = a.merge(b)
+        if a.direction = Direction.FORWARD:
+            for pred in cfg.pred(block):
+                in_[block] = out[pred].merge(block)
 
-        out_len_before = len(out)
-        out_b[block] = a.transfer(block, in_[block])
-        out_let_after = len(out)
-        if out_len_before != out_len_after:
+            len_before = len(out)
+            out_b[block] = a.transfer(block, in_[block])
+            len_after = len(out)
+        else:
+            for succ in cfg.succ(block):
+                out[block] = in_[succ].merge(block)
+
+            len_before = len(in_)
+            out_b[block] = a.transfer(block, out[block])
+            len_after = len(in_)
+
+        if len_before != len_after:
             worklist.append(block.successors)
 
-def df(blocks):
+def df(cfg):
     a = Analysis(
         InitVal.EMPTY,
         reaching_defns_transfer,
         union,
         Direction.FORWARD
     )
-    return worklist(a, blocks)
+    return worklist(a, cfg)
 
 ########################################################
 # Reaching Definitions Analysis
@@ -147,5 +160,6 @@ def reaching_defns_transfer(b, in_):
 
 if __name__ == '__main__':
     blocks = form_blocks(json.load(sys.stdin))
-    analysis = df(blocks)
+    cfg = Cfg(blocks)
+    analysis = df(cfg)
     print(analysis)
