@@ -1,7 +1,14 @@
+import sys
+import json
 from enum import Enum, auto
-class Cfg:
+from form_blocks import form_blocks
 
-    def Cfg(self, blocks):
+########################################################
+# CFG with ability to get pred and succ for each block
+# in O(1) time
+########################################################
+class Cfg:
+    def __init__(self, blocks):
         self.blocks = blocks
         self.succ = {}
         self.pred = {}
@@ -11,53 +18,61 @@ class Cfg:
             lbl = block[0]['label']
             lbl_to_block[lbl] = block
 
+        # Setup first block pred
+        self.create_pred(None, blocks[0])
         for i in range(len(blocks)):
             block = blocks[i]
             last = block[-1]
             if 'op' in last and last['op'] == 'jmp':
                 lbl = last['labels'][0]
                 next_block = lbl_to_block[lbl]
-                create_succ(block, next_block)
-                create_pred(block, next_block)
+                self.create_succ(block, next_block)
+                self.create_pred(block, next_block)
             elif 'op' in last and last['op'] == 'br':
                 true_lbl = last['labels'][0]
                 true_block = lbl_to_block[true_lbl]
-                create_succ(block, true_block)
-                create_pred(block, true_block)
+                self.create_succ(block, true_block)
+                self.create_pred(block, true_block)
 
                 false_lbl = last['labels'][1]
                 false_block = lbl_to_block[false_lbl]
-                create_succ(block, false_block)
-                create_pred(block, false_block)
+                self.create_succ(block, false_block)
+                self.create_pred(block, false_block)
             else:
                 more_blocks = i < len(blocks) - 1
                 next_block = blocks[i+1] if more_blocks else None
-                create_succ(block, next_block)
-                create_pred(block, next_block)
+                self.create_succ(block, next_block)
+                self.create_pred(block, next_block)
 
     def create_succ(self, block, next_block):
-        if block in self.succ.keys() and next_block is not None:
-            lst = self.succ[block]
+        block_name = block[0]['label']
+        if block_name in self.succ.keys() and next_block != None:
+            lst = self.succ[block_name]
             lst.append(next_block)
-        else if next_block is not None:
-            self.succ[block] = [next_block]
+        elif next_block != None:
+            self.succ[block_name] = [next_block]
         else:
-            self.succ[block] = []
+            self.succ[block_name] = []
 
     def create_pred(self, block, next_block):
-        if next_block in self.pred.keys() and next_block is not None:
-            lst = self.pred[next_block]
+        if next_block is None:
+            return
+
+        next_block_name = next_block[0]['label']
+        if block is None:
+            self.pred[next_block_name] = []
+            return
+        if next_block_name in self.pred.keys():
+            lst = self.pred[next_block_name]
             lst.append(block)
-        elif next_block is not None:
-            self.pred[next_block] = [block]
-        else:
-            self.pred[block] = []
+        else :
+            self.pred[next_block_name] = [block]
 
-    def succ(block):
-        return self.succ[block]
+    def get_succ(self, block):
+        return self.succ[block[0]['label']]
 
-    def pred(block):
-        return self.pred[block]
+    def get_pred(self, block):
+        return self.pred[block[0]['label']]
 
 ########################################################
 # Dataflow Framework
@@ -71,14 +86,9 @@ class Analysis:
         self.direction = direction
 
 class DfSet:
-    def __init__(self, items):
+    def __init__(self, items, isTop=False):
         self.items = items
-        self.isTop = False
-
-    def __init__(self, isTop):
         self.isTop = isTop
-        if not isTop:
-            self.items = set()
 
 class InitVal(Enum):
     EMPTY = auto()
@@ -89,37 +99,40 @@ class Direction(Enum):
     BACKWARD = auto()
 
 def union(a, b):
-    return a.union(b)
+    if a.isTop or b.isTop:
+        return a
+    else:
+        return DfSet(a.items.union(b.items))
 
 def intersection(a, b):
     if a.isTop:
         return b
     elif b.isTop:
         return a
-    else
+    else:
         return DfSet(a.items.intersection(b.items))
 
 def difference(a, b):
     return DfSet(a.items.difference(b.items))
 
 def init_in(a, blocks):
-    isTop = a.init_val == InitVal.EMPTY
+    isTop = a.init_val == InitVal.TOP
     in_ = {}
-    if a.direction is Direction.FORWARD and blocks:
-        in_[blocks[0]] = DfSet(isTop)
+    if a.direction == Direction.FORWARD and blocks:
+        in_[blocks[0][0]['label']] = DfSet(set(), isTop)
     else:
         for block in blocks:
-            in_[block] = DfSet(isTop)
+            in_[block[0]['label']] = DfSet(set(), isTop)
     return in_
 
 def init_out(a, blocks):
-    isTop = a.init_val == InitVal.EMPTY
+    isTop = a.init_val == InitVal.TOP
     out = {}
-    if a.direction is Direction.FORWARD:
+    if a.direction == Direction.FORWARD:
         for block in blocks:
-            out[block] = DfSet(isTop)
+            out[block[0]['label']] = DfSet(set(), isTop)
     elif blocks:
-        out[blocks[0]] = DfSet(isTop)
+        out[blocks[-1][0]['label']] = DfSet(set(), isTop)
     return out
 
 def worklist(a, cfg):
@@ -128,50 +141,148 @@ def worklist(a, cfg):
 
     worklist = cfg.blocks[:]
     while worklist:
-        block = worklist.pop()
+        if a.direction == Direction.FORWARD:
+            block = worklist.pop(0)
+            name = block_name(block)
+            for pred in cfg.get_pred(block):
+                if name in in_.keys():
+                    x = in_[name]
+                else:
+                    x = DfSet(set(), a.init_val == InitVal.TOP)
+                in_[name] = a.merge(out[block_name(pred)], x)
 
-        if a.direction = Direction.FORWARD:
-            for pred in cfg.pred(block):
-                in_[block] = out[pred].merge(block)
-
-            len_before = len(out)
-            out_b[block] = a.transfer(block, in_[block])
-            len_after = len(out)
+            len_before = len(out[name].items)
+            out[name] = a.transfer(block, in_[name])
+            len_after = len(out[name].items)
+            add_to_worklist = cfg.get_succ(block)
         else:
-            for succ in cfg.succ(block):
-                out[block] = in_[succ].merge(block)
+            block = worklist.pop()
+            name = block_name(block)
+            for succ in cfg.get_succ(block):
+                if name in out.keys():
+                    x = out[name]
+                else:
+                    x = DfSet(set(), a.init_val == InitVal.TOP)
+                out[name] = a.merge(in_[block_name(succ)], x)
 
-            len_before = len(in_)
-            out_b[block] = a.transfer(block, out[block])
-            len_after = len(in_)
+            len_before = len(in_[name].items)
+            in_[name] = a.transfer(block, out[name])
+            len_after = len(in_[name].items)
+            add_to_worklist = cfg.get_pred(block)
 
         if len_before != len_after:
-            worklist.append(block.successors)
+            for b in add_to_worklist:
+                worklist.append(b)
 
-def df(cfg):
-    a = Analysis(
-        InitVal.EMPTY,
-        reaching_defns_transfer,
-        union,
-        Direction.FORWARD
-    )
-    return worklist(a, cfg)
+    return in_, out
+
+def block_name(block):
+    return block[0]['label']
+
+def print_vars(varz):
+    l = len(varz.items)
+    if l == 0:
+        print('\u2205')
+    else:
+        i = 0
+        for var in varz.items:
+            print(var, end = '')
+            if i < l -1:
+                print(", ", end ='')
+            i += 1
+        print('')
+
+def print_analysis(blocks, info):
+    in_, out = info
+    for block in blocks:
+        name = block_name(block)
+        print(name + ':')
+
+        in_b = in_[name]
+        print('  in:  ', end='')
+        print_vars(in_b)
+
+        out_b = out[name]
+        print('  out: ', end ='')
+        print_vars(out_b)
+
+def df(prog, a):
+    for func in prog['functions']:
+        blocks = list(form_blocks(func['instrs']))
+        cfg = Cfg(blocks)
+        info  = worklist(a, cfg)
+        print_analysis(blocks, info)
+
+
+########################################################
+# Live Variable Analysis
+########################################################
+def live_var_transfer(b, out):
+    return union(use(b), difference(out, defn(b)))
+
+def use(block):
+    use = set()
+    defn = set()
+    for instr in block:
+        if 'args' in instr:
+            for arg in instr['args']:
+                if arg not in defn:
+                    use.add(arg)
+        if 'dest' in instr:
+            defn.add(instr['dest'])
+    return DfSet(use)
+
+########################################################
+# Defined Variable Analysis
+########################################################
+def defined_var_transfer(b, in_):
+    return union(defn(b), in_)
 
 ########################################################
 # Reaching Definitions Analysis
 ########################################################
 
-def defn(b):
-    pass
+def defn(block):
+    defs = set()
+    for instr in block:
+        if 'dest' in instr:
+            defs.add(instr['dest'])
+    return DfSet(defs)
 
-def kills(b):
-    pass
+def kills(block):
+    kills = set()
+    for instr in block:
+        if 'dest' in instr:
+            kills.add(instr['dest'])
+    return DfSet(kills)
 
 def reaching_defns_transfer(b, in_):
      return union(defn(b), difference(in_, kills(b)))
 
+########################################################
+# All Analysis to choose from
+########################################################
+ANALYSES = {
+    'reaching-defns' : Analysis(
+        InitVal.EMPTY,
+        reaching_defns_transfer,
+        union,
+        Direction.FORWARD
+    ),
+    'defined' : Analysis(
+        InitVal.EMPTY,
+        defined_var_transfer,
+        union,
+        Direction.FORWARD
+    ),
+    'live' : Analysis(
+        InitVal.EMPTY,
+        live_var_transfer,
+        union,
+        Direction.BACKWARD
+    )
+}
+
 if __name__ == '__main__':
-    blocks = form_blocks(json.load(sys.stdin))
-    cfg = Cfg(blocks)
-    analysis = df(cfg)
-    print(analysis)
+    df(json.load(sys.stdin), ANALYSES[sys.argv[1]])
+

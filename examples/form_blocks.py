@@ -6,7 +6,7 @@ import sys
 
 # Instructions that terminate a basic block.
 TERMINATORS = 'br', 'jmp', 'ret'
-
+LABEL_COUNTER = 1
 
 def form_blocks(instrs):
     """Given a list of Bril instructions, generate a sequence of
@@ -18,12 +18,19 @@ def form_blocks(instrs):
     can only appear at the *start* of a basic block. Basic blocks may
     not be empty.
     """
+    global LABEL_COUNTER
 
     # Start with an empty block.
     cur_block = []
 
     for instr in instrs:
         if 'op' in instr:  # It's an instruction.
+            # Make sure block starts with a label
+            if not cur_block:
+                lbl = { 'label' : 'b{}'.format(LABEL_COUNTER) }
+                cur_block.append(lbl)
+                LABEL_COUNTER += 1
+
             # Add the instruction to the currently-being-formed block.
             cur_block.append(instr)
 
